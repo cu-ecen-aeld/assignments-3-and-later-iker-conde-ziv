@@ -1,4 +1,9 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,6 +21,26 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+
+    if (cmd == NULL)
+    {
+        printf("Error: input cmd argument is NULL");
+        return false;
+    }
+
+    int result = system(cmd);
+
+    if (result == -1)
+    {
+        perror("Error executing command");
+        return false;
+    }
+
+    if (!WIFEXITED(result))
+    {
+        if (WEXITSTATUS(result) != 0)
+            return false;
+    }
 
     return true;
 }
@@ -61,7 +86,41 @@ bool do_exec(int count, ...)
 
     va_end(args);
 
-    return true;
+    pid_t child_pid = fork();
+    if (child_pid == -1)
+    {
+        perror("fork");
+        return false;
+    }
+    else if (child_pid == 0)
+    {
+        // This is the child process
+        execv(command[0], command);
+        perror("execv");
+        exit(1);
+    }
+    else
+    {
+        // This is the parent process
+        int status;
+        if (waitpid(child_pid, &status, 0) == -1)
+        {
+            perror("waitpid");
+            return false;
+        }
+        if (WIFEXITED(status))
+        {
+            int exit_status = WEXITSTATUS(status);
+            if (exit_status == 0)
+                return true;
+            else
+                printf("Command failed with exit code: %d\n", exit_status);
+        }
+        else
+            printf("Command did not exit properly\n");
+    }
+
+    return false;
 }
 
 /**
@@ -95,5 +154,50 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 
     va_end(args);
 
-    return true;
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) { perror("open"); return false; }
+
+    pid_t child_pid = fork();
+    if (child_pid == -1)
+    {
+        perror("fork");
+        close(fd);
+        return false;
+    }
+    else if (child_pid == 0)
+    {
+        if (dup2(fd, 1) < 0) { perror("dup2"); exit(1); }
+        close(fd);
+        // This is the child process
+        execv(command[0], command);
+        perror("execv");
+        exit(1);
+    }
+    else
+    {
+        // This is the parent process
+        int status;
+        if (waitpid(child_pid, &status, 0) == -1)
+        {
+            perror("waitpid");
+            close(fd);
+            return false;
+        }
+        if (WIFEXITED(status))
+        {
+            int exit_status = WEXITSTATUS(status);
+            if (exit_status == 0)
+            {
+                close(fd);
+                return true;
+            }
+            else
+                printf("Command failed with exit code: %d\n", exit_status);
+        }
+        else
+            printf("Command did not exit properly\n");
+    }
+
+    close(fd);
+    return false;
 }
