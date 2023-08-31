@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Check input argument numbers
 if [ "$#" -ne 2 ]; then
