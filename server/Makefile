@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra
+LFLAGS = -lpthread
 TARGET = aesdsocket
 OBJFILES = aesdsocket.o
 
@@ -13,10 +14,10 @@ default: $(TARGET)
 all: $(TARGET)
 
 $(TARGET): $(OBJFILES)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $< $(LFLAGS)
 
 clean:
 	rm -f $(TARGET) $(OBJFILES)
