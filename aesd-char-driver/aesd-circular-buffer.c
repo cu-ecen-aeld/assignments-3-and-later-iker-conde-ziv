@@ -33,7 +33,8 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     size_t start_entry = buffer->out_offs;
 
     // Loop through the entries starting from buffer->out_offs
-    for (size_t i = start_entry; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED + start_entry; ++i)
+    size_t i = 0;
+    for (i = start_entry; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED + start_entry; ++i)
     {
         // Calculate the index taking into account wrapping around to the beginning
         size_t index = i % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
@@ -74,12 +75,14 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 * Any necessary locking must be handled by the caller
 * Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
 */
-void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+const char * aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
+    const char * ret_val = NULL;
     // If the buffer is full, overwrite the oldest entry and advance buffer->out_offs
     if (buffer->full)
     {
-        // Mark the oldest entry as unused
+        // Mark the oldest entry as unused and return pointer to be freed
+        ret_val = buffer->entry[buffer->out_offs].buffptr;
         buffer->entry[buffer->out_offs].buffptr = NULL;
         buffer->entry[buffer->out_offs].size = 0;
         // Advance out_offs to the next index
@@ -97,6 +100,8 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     {
         buffer->full = true;
     }
+
+    return ret_val;
 }
 
 /**
