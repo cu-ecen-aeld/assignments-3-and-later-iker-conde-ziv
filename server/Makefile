@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra
+CFLAGS ?= -Wall -Wextra -DUSE_AESD_CHAR_DEVICE
 LDFLAGS ?= -lpthread
 TARGET ?= aesdsocket
 OBJFILES = aesdsocket.o

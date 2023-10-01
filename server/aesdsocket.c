@@ -14,7 +14,11 @@
 
 
 #define PORT 9000
+#ifdef USE_AESD_CHAR_DEVICE
+#define DATA_FILE "/dev/aesdchar"
+#else
 #define DATA_FILE "/var/tmp/aesdsocketdata"
+#endif /* USE_AESD_CHAR_DEVICE */
 #define MAX_CLIENTS 500
 #define TIMESTAMP_INTERVAL 10
 
@@ -43,7 +47,9 @@ void sigint_handler(int signo) {
         pthread_mutex_destroy(&mutex);
 
         shutdown(server_socket, SHUT_RDWR);
+        #ifndef USE_AESD_CHAR_DEVICE
         remove(DATA_FILE);
+        #endif /* USE_AESD_CHAR_DEVICE */
         closelog();
         exit(0);
     }
@@ -176,12 +182,14 @@ void *add_timestamps(void *arg) {
 
 static int handle_thread(void)
 {
+    #ifndef USE_AESD_CHAR_DEVICE
     // Handle timestamp
     pthread_t timestamp_thread;
     if (pthread_create(&timestamp_thread, NULL, add_timestamps, NULL) != 0) {
         perror("Error creating timestamp thread");
         exit(-1);
     }
+    #endif /* USE_AESD_CHAR_DEVICE */
 
     while (1) {
         // Listen for incoming connections
