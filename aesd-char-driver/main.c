@@ -19,6 +19,7 @@
 #include <linux/fs.h> // file_operations
 #include <linux/slab.h>
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -133,12 +134,88 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     mutex_unlock(&p_aesd_dev->lock);
     return retval;
 }
+
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+    struct aesd_dev *p_aesd_dev = filp->private_data;
+
+    /* Get buffer size */
+    loff_t buffer_size = 0;
+    int i = 0;
+    for (i = 0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    {
+        buffer_size =  buffer_size + p_aesd_dev->circular_buffer.entry[i].size;
+    }
+    return fixed_size_llseek(filp, offset, whence, buffer_size);
+}
+
+static long aesd_adjust_file_offset (struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset)
+{
+    struct aesd_dev *p_aesd_dev = filp->private_data;
+
+    /* Check write_cmd validity */
+    int no_of_cmds = 0;
+    for (no_of_cmds = 0; no_of_cmds<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; no_of_cmds++)
+    {
+        if (p_aesd_dev->circular_buffer.entry[no_of_cmds].size == 0)
+            break;
+    }
+    if (no_of_cmds < write_cmd)
+    {
+        PDEBUG("Number of command does not exist\n");
+        return -EINVAL;
+    }
+
+    /* Check write_cmd_offset validity */
+    if (p_aesd_dev->circular_buffer.entry[write_cmd].size < write_cmd_offset)
+    {
+        PDEBUG("Offset of command is to big\n");
+        return -EINVAL;
+    }
+    
+    int i = 0;
+    int cmd_offset = 0;
+    for (i = 0; i<(write_cmd); i++)
+    {
+        cmd_offset = cmd_offset + p_aesd_dev->circular_buffer.entry[i].size;
+    }
+
+    long return_value = cmd_offset + write_cmd_offset;
+    filp->f_pos = return_value;
+    return return_value;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    long retval = -EINVAL;
+    struct aesd_seekto seekto;
+    switch (cmd) {
+        case AESDCHAR_IOCSEEKTO:
+            if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0)
+            {
+                return -EFAULT;
+            }
+            else
+            {
+                retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+            }
+            break;
+
+        default:
+            return -ENOTTY;
+    }
+
+    return retval;
+}
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek =   aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

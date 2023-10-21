@@ -11,6 +11,7 @@
 #include <netdb.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 
 #define PORT 9000
@@ -21,6 +22,7 @@
 #endif /* USE_AESD_CHAR_DEVICE */
 #define MAX_CLIENTS 500
 #define TIMESTAMP_INTERVAL 10
+#define AESDCHAR_PATTERN "AESDCHAR_IOCSEEKTO"
 
 static int server_socket = 0;
 static bool daemon_mode = false;
@@ -95,20 +97,36 @@ void *handle_connection(void *arg) {
             continue;
         }
 
-        pthread_mutex_lock(&mutex);
-        data_file = fopen(DATA_FILE, "a");
-        if (data_file == NULL) {
-            perror("Error opening data file");
-            free(thread_info);
-            pthread_mutex_unlock(&mutex);
-            pthread_exit(NULL);
-            exit(-1);
+        // Check the content of the message. If so, do the ioctl command and  
+        // do not write it to the socket.
+        char *ptr = strstr(buffer, AESDCHAR_PATTERN);
+        int x, y = -1;
+        uint8_t ioctl_cmd_found = 0;
+        if (ptr != NULL)
+        {
+            ptr += strlen(AESDCHAR_PATTERN);
+            if (sscanf(ptr, ":%d,%d", &x, &y) == 2)
+            {
+                ioctl_cmd_found = 1;
+            }
         }
+        if (ioctl_cmd_found == 0)
+        {
+            pthread_mutex_lock(&mutex);
+            data_file = fopen(DATA_FILE, "a");
+            if (data_file == NULL) {
+                perror("Error opening data file");
+                free(thread_info);
+                pthread_mutex_unlock(&mutex);
+                pthread_exit(NULL);
+                exit(-1);
+            }
 
-        fwrite(buffer, 1, bytes_received, data_file);
+            fwrite(buffer, 1, bytes_received, data_file);
 
-        fclose(data_file);
-        pthread_mutex_unlock(&mutex);
+            fclose(data_file);
+            pthread_mutex_unlock(&mutex);
+        }
 
         // Check for a newline character to determine the end of a packet
         bool newline_found = false;
@@ -124,6 +142,20 @@ void *handle_connection(void *arg) {
             // Send the content of the data file back to the client
             pthread_mutex_lock(&mutex);
             data_file = fopen(DATA_FILE, "r");
+
+            if (ioctl_cmd_found)
+            {
+                int fd = fileno(data_file);
+                struct aesd_seekto seekto;
+                seekto.write_cmd = x;
+                seekto.write_cmd_offset = y;
+                int result_ret = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+                if (result_ret != 0)
+                {
+                    perror("Error executing ioctl");
+                }
+            }
+
             if (data_file == NULL) {
                 perror("Error opening data file");
                 free(thread_info);
