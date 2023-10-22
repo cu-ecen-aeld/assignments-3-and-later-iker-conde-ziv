@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include "../aesd-char-driver/aesd_ioctl.h"
 
+#define USE_AESD_CHAR_DEVICE
 
 #define PORT 9000
 #ifdef USE_AESD_CHAR_DEVICE
