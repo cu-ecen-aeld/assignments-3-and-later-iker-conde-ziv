@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #endif
 
-#define AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED 10
+#define AESDCHAR_DEFAULT_MAX_WRITE_OPERATIONS_SUPPORTED 10
 
 struct aesd_buffer_entry
 {
@@ -35,7 +35,7 @@ struct aesd_circular_buffer
     /**
      * An array of pointers to memory allocated for the most recent write operations
      */
-    struct aesd_buffer_entry  entry[AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED];
+    struct aesd_buffer_entry *entry;
     /**
      * The current location in the entry structure where the next write should
      * be stored.
@@ -56,8 +56,9 @@ extern struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos
 
 extern const char * aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry);
 
-extern void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer);
+extern void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer, uint8_t m_circular_buffer_size);
 
+extern void aesd_circular_buffer_cleanup(struct aesd_circular_buffer *buffer);
 /**
  * Create a for loop to iterate over each member of the circular buffer.
  * Useful when you've allocated memory for circular buffer entries and need to free it
@@ -72,9 +73,9 @@ extern void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer);
  *      free(entry->buffptr);
  * }
  */
-#define AESD_CIRCULAR_BUFFER_FOREACH(entryptr,buffer,index) \
+#define AESD_CIRCULAR_BUFFER_FOREACH(entryptr,buffer,index,buffer_size) \
     for(index=0, entryptr=&((buffer)->entry[index]); \
-            index<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; \
+            index<buffer_size; \
             index++, entryptr=&((buffer)->entry[index]))
 
 

@@ -18,6 +18,8 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include <linux/slab.h>
+#include <linux/kernel.h>
+#include <linux/moduleparam.h> 
 #include "aesdchar.h"
 #include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
@@ -27,6 +29,31 @@ MODULE_AUTHOR("Your Name Here"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
+
+static int circular_buffer_size_mod_param = AESDCHAR_DEFAULT_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+static int circular_buffer_size_set(const char *val, const struct kernel_param *kp)
+{
+	int n = 0, ret;
+
+	ret = kstrtoint(val, 10, &n);
+	if (ret != 0 || n < 1 || n > 32)
+		return -EINVAL;
+
+    ret = param_set_int(val, kp);
+
+    aesd_circular_buffer_init(&aesd_device.circular_buffer, circular_buffer_size_mod_param);
+    memset(aesd_device.temp_buffer, 0, sizeof(aesd_device.temp_buffer));
+    aesd_device.temp_buffer_size = 0;
+	return ret;
+}
+
+static const struct kernel_param_ops param_ops = {
+	.set	= circular_buffer_size_set,
+	.get	= param_get_int,
+};
+
+module_param_cb(circular_buffer_size, &param_ops, &circular_buffer_size_mod_param, S_IRUGO|S_IWUSR);
 
 int aesd_open(struct inode *inode, struct file *filp)
 {
@@ -142,7 +169,7 @@ loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
     /* Get buffer size */
     loff_t buffer_size = 0;
     int i = 0;
-    for (i = 0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++)
+    for (i = 0; i<circular_buffer_size_mod_param; i++)
     {
         buffer_size =  buffer_size + p_aesd_dev->circular_buffer.entry[i].size;
     }
@@ -155,7 +182,7 @@ static long aesd_adjust_file_offset (struct file *filp, unsigned int write_cmd, 
 
     /* Check write_cmd validity */
     int no_of_cmds = 0;
-    for (no_of_cmds = 0; no_of_cmds<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; no_of_cmds++)
+    for (no_of_cmds = 0; no_of_cmds<circular_buffer_size_mod_param; no_of_cmds++)
     {
         if (p_aesd_dev->circular_buffer.entry[no_of_cmds].size == 0)
             break;
@@ -250,7 +277,7 @@ int aesd_init_module(void)
     /**
      * TODO: initialize the AESD specific portion of the device
      */
-    aesd_circular_buffer_init(&aesd_device.circular_buffer);
+    aesd_circular_buffer_init(&aesd_device.circular_buffer, circular_buffer_size_mod_param);
     memset(aesd_device.temp_buffer, 0, sizeof(aesd_device.temp_buffer));
     aesd_device.temp_buffer_size = 0;
     mutex_init(&aesd_device.lock);
@@ -273,6 +300,8 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
+    aesd_circular_buffer_cleanup(&aesd_device.circular_buffer);
+
     mutex_unlock(&aesd_device.lock);
 
     unregister_chrdev_region(devno, 1);

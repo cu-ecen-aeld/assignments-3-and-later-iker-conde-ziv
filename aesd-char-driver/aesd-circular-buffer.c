@@ -14,7 +14,12 @@
 #include <string.h>
 #endif
 
+#include <linux/slab.h>
+#include <linux/printk.h>
+
 #include "aesd-circular-buffer.h"
+
+static uint8_t circular_buffer_size = AESDCHAR_DEFAULT_MAX_WRITE_OPERATIONS_SUPPORTED;
 
 /**
  * @param buffer the buffer to search for corresponding offset.  Any necessary locking must be performed by caller.
@@ -34,16 +39,16 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 
     // Loop through the entries starting from buffer->out_offs
     size_t i = 0;
-    for (i = start_entry; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED + start_entry; ++i)
+    for (i = start_entry; i < circular_buffer_size + start_entry; ++i)
     {
         // Calculate the index taking into account wrapping around to the beginning
-        size_t index = i % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        size_t index = i % circular_buffer_size;
 
         // Check if the entry at this index is empty
         if (buffer->entry[index].buffptr == NULL)
         {
             // If we've searched all entries, exit the loop
-            if (i == start_entry + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1)
+            if (i == start_entry + circular_buffer_size - 1)
             {
                 break;
             }
@@ -86,14 +91,14 @@ const char * aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer,
         buffer->entry[buffer->out_offs].buffptr = NULL;
         buffer->entry[buffer->out_offs].size = 0;
         // Advance out_offs to the next index
-        buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        buffer->out_offs = (buffer->out_offs + 1) % circular_buffer_size;
     }
 
     // Copy data from the new entry to the current input position and advance in_offs
     buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
     buffer->entry[buffer->in_offs].size = add_entry->size;
     // Advance in_offs to the next index
-    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    buffer->in_offs = (buffer->in_offs + 1) % circular_buffer_size;
 
     // Mark the buffer as full if in_offs reaches out_offs
     if (buffer->in_offs == buffer->out_offs)
@@ -106,8 +111,37 @@ const char * aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer,
 
 /**
 * Initializes the circular buffer described by @param buffer to an empty struct
+* and allocates @param m_circular_buffer_size elements in the circular buffer
 */
-void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
+void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer, uint8_t m_circular_buffer_size)
 {
-    memset(buffer,0,sizeof(struct aesd_circular_buffer));
+    circular_buffer_size = m_circular_buffer_size;
+
+    if (buffer->entry != NULL)
+    {
+        kfree((void*)buffer->entry);
+    }
+
+    buffer->entry = kmalloc(circular_buffer_size * sizeof(struct aesd_buffer_entry), GFP_KERNEL);
+
+    if (buffer->entry == NULL)
+    {
+        printk(KERN_ERR "Error allocating circular buffer entries");
+        return;
+    }
+
+    memset(buffer->entry, 0, circular_buffer_size * sizeof(struct aesd_buffer_entry));
+    buffer->in_offs = 0;
+    buffer->out_offs = 0;
+    buffer->full = false;
+    
+    printk(KERN_INFO "AESD circular buffer initialized with size %d", circular_buffer_size);
+}
+
+/**
+* Frees circular buffer memory allocated in aesd_circular_buffer_init()
+*/
+void aesd_circular_buffer_cleanup(struct aesd_circular_buffer *buffer)
+{
+    kfree((void*)buffer->entry);
 }
